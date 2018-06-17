@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,7 +54,7 @@ func main() {
 	fileName := flag.String("hf", "all", "har file name, 'all' for running all hars in ./hars ")
 	harsPath := flag.String("path", "proc", "path to hars")
 	dur := flag.Int("dur", 10000, "duration in ms")
-	workers := flag.Int("workers", 1, "How many parrallel workers")
+	workers := flag.Int("workers", 1, "only for load test - How many parrallel workers")
 
 	flag.Parse()
 
@@ -67,6 +66,8 @@ func main() {
 
 	files := getHarsFileInfo(fileName, &harPath)
 
+	fmt.Printf("path contains %d files, files are %s\n", len(files), files)
+
 	//insert har files to run into slice and then iterate and run
 
 	//Time out should be enforced here,
@@ -74,27 +75,45 @@ func main() {
 	dd := d * time.Millisecond
 	timeout := time.After(dd)
 
+	bto := false
+
+	if isHar == false {
+		go func(timeout <-chan time.Time, bto *bool) {
+			select {
+			case <-timeout:
+				fmt.Println("test duration passed...")
+				*bto = true
+				return
+			}
+		}(timeout, &bto)
+	}
+
 	//Limit num of workers
-	fmt.Printf("will spawn %d work in parrallel", *workers)
+	fmt.Printf("will spawn %d work in parrallel\n", *workers)
 	ch := make(chan int, *workers)
 
 	for {
 		for _, file := range files {
-			fmt.Printf("file %s\n", file.Name())
+
 			if strings.HasSuffix(file.Name(), "har") {
-				fmt.Printf("reading %s\n", file.Name())
+				fmt.Printf("--------Running file %s, job number %d -----\n", file.Name(), len(ch))
 				dat, _ := ioutil.ReadFile(harPath + file.Name())
 
 				br := bytes.NewReader(dat)
 				r := bufio.NewReader(br)
 
 				har, _ := hargo.Decode(r)
-
-				nonUrl, _ := url.Parse("http://nonnononon.com")
-
 				ch <- 0
+				if isHar == false {
 
-				go hargo.LoadTest(*fileName, har, *nonUrl, false, isHar, ch)
+					if bto {
+						fmt.Println("recieved to, breaking")
+						return
+					}
+
+				}
+
+				go hargo.LoadTest(*fileName, har, false, isHar, ch)
 
 			}
 
@@ -102,14 +121,6 @@ func main() {
 
 		if isHar == true {
 			return
-		}
-
-		select {
-		case <-timeout:
-			fmt.Println("test duration passed...")
-			return
-		default:
-
 		}
 
 	}
