@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/elerer/hargo"
@@ -92,6 +93,8 @@ func main() {
 	fmt.Printf("will spawn %d work in parrallel\n", *workers)
 	ch := make(chan int, *workers)
 
+	var wg sync.WaitGroup
+
 	for {
 		for _, file := range files {
 
@@ -112,14 +115,16 @@ func main() {
 					}
 
 				}
-
-				go hargo.LoadTest(*fileName, har, false, isHar, ch)
+				wg.Add(1)
+				go hargo.LoadTest(*fileName, har, false, isHar, ch, &wg)
 
 			}
 
 		}
 
 		if isHar == true {
+			wg.Wait()
+			fmt.Println("har mode - finished waiting")
 			return
 		}
 
